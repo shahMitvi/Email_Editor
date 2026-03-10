@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f3f4f6;
+  --color-panel: #ffffff;
+  --color-border: #e5e7eb;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-canvas);
+    color: #111827;
+  }
+
+  /* Remove browser native yellow/gold focus outline — Tailwind focus:ring handles this */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+  }
+}
