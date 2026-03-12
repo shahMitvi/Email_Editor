@@ -21,13 +21,16 @@ const getContentStyles = (styles: Record<string, any>): React.CSSProperties => {
 // Helper to replace ${variable_name} with its fallback value
 export const applyVariables = (text: string, variables: any[]) => {
   if (!text) return text;
-  let result = text;
+  let result = String(text);
   variables.forEach((v) => {
     if (v.name) {
       // Escape the variable name to be safe in regex
-      const safeName = v.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\$\\{${safeName}\\}`, 'g');
-      result = result.replace(regex, v.fallback || '');
+      const safeName = String(v.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Allow optional whitespace inside the brackets: ${ age }
+      const regex = new RegExp(`\\$\\{\\s*${safeName}\\s*\\}`, 'g');
+      // Use fallback if truthy, or if it's explicitly the string/number 0
+      const fallbackValue = v.fallback !== undefined && v.fallback !== null ? String(v.fallback) : '';
+      result = result.replace(regex, fallbackValue);
     }
   });
   return result;
@@ -41,7 +44,8 @@ const HEADING_TAGS: Record<string, string> = {
 };
 
 export const HeadingBlock = ({ element }: { element: EmailElement }) => {
-  const { variables } = useBuilderStore();
+  const { variables, updateElement, selectedId } = useBuilderStore();
+  const isSelected = selectedId === element.id;
   const tag = HEADING_TAGS[element.content?.headingLevel ?? 'h1'] ?? 'h1';
   const Tag = tag as any;
 
@@ -54,20 +58,32 @@ export const HeadingBlock = ({ element }: { element: EmailElement }) => {
     textAlign:  (element.styles.textAlign as any) || 'left',
     fontFamily: element.styles.fontFamily || 'Arial, sans-serif',
     lineHeight: '1.2',
-    userSelect: 'none',
-    pointerEvents: 'none',
+    userSelect: isSelected ? 'auto' : 'none',
+    pointerEvents: isSelected ? 'auto' : 'none',
     wordBreak: 'break-word',
+    whiteSpace: 'pre-wrap',
+    outline: 'none',
   };
 
-  const text = applyVariables(element.content?.text || 'Heading', variables);
-  return <Tag style={style}>{text}</Tag>;
+  const htmlContent = applyVariables(element.content?.text || 'Heading', variables);
+  return (
+    <Tag 
+      contentEditable={isSelected}
+      suppressContentEditableWarning
+      onBlur={(e: any) => isSelected && updateElement(element.id, { content: { ...element.content, text: e.currentTarget.innerHTML } })}
+      style={style}
+      dangerouslySetInnerHTML={{ __html: htmlContent }}
+    />
+  );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TextBlock – plain paragraph with bold / italic / underline toggles
 // ─────────────────────────────────────────────────────────────────────────────
 export const TextBlock = ({ element }: { element: EmailElement }) => {
-  const { variables } = useBuilderStore();
+  const { variables, updateElement, selectedId } = useBuilderStore();
+  const isSelected = selectedId === element.id;
+
   const style: React.CSSProperties = {
     margin: 0,
     padding: element.styles.padding || '0',
@@ -80,13 +96,23 @@ export const TextBlock = ({ element }: { element: EmailElement }) => {
     textAlign:       (element.styles.textAlign as any) || 'left',
     fontFamily:      element.styles.fontFamily      || 'Arial, sans-serif',
     lineHeight:      '1.5',
-    userSelect:      'none',
-    pointerEvents:   'none',
+    userSelect:      isSelected ? 'auto' : 'none',
+    pointerEvents:   isSelected ? 'auto' : 'none',
     wordBreak:       'break-word',
+    whiteSpace:      'pre-wrap',
+    outline:         'none',
   };
 
-  const text = applyVariables(element.content?.text || 'Your text here', variables);
-  return <p style={style}>{text}</p>;
+  const htmlContent = applyVariables(element.content?.text || 'Your text here', variables);
+  return (
+    <p 
+      contentEditable={isSelected}
+      suppressContentEditableWarning
+      onBlur={(e) => isSelected && updateElement(element.id, { content: { ...element.content, text: e.currentTarget.innerHTML } })}
+      style={style}
+      dangerouslySetInnerHTML={{ __html: htmlContent }}
+    />
+  );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

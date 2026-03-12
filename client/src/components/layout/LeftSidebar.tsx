@@ -1,4 +1,4 @@
-import { Type, Heading, Image as ImageIcon, SquareMousePointer, Table, Minus, ArrowUpDown, PlaySquare, Layers, EyeOff, GripVertical, Code, QrCode, FileText, Trash2, Plus, X } from 'lucide-react';
+import { Type, Heading, Image as ImageIcon, SquareMousePointer, Table, Minus, ArrowUpDown, PlaySquare, Layers, EyeOff, GripVertical, Code, QrCode, Trash2, Plus, X } from 'lucide-react';
 import { useDraggable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -66,7 +66,6 @@ export const LeftSidebar = () => {
   
   const currentPageParams = pages.find((p) => p.id === currentPageId);
   const elements = currentPageParams?.elements || [];
-  const pageIndex = pages.findIndex((p) => p.id === currentPageId);
 
   const blocks = [
     { id: 'text',    label: 'Text',    icon: Type },
@@ -106,13 +105,17 @@ export const LeftSidebar = () => {
              <div className="px-1 mb-3">
                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 flex justify-between items-center">
                  <span>Layers</span>
+                 {/* Page Indicator - Hidden
                  <span className="text-[10px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1 normal-case font-medium">
                    <FileText size={10} /> Page {pageIndex + 1}
                  </span>
+                 */}
                </h3>
+               {/* 
                <p className="text-[10px] text-gray-400 leading-tight">
                  Editing layers for: <span className="font-semibold text-gray-600">{currentPageParams?.name || 'Current Page'}</span>
                </p>
+               */}
              </div>
              <div className="flex-1 overflow-y-auto custom-scrollbar border border-gray-200 rounded p-1 bg-white">
                <div className="px-2 py-1.5 hover:bg-gray-50 rounded text-sm text-gray-700 cursor-pointer flex items-center gap-2 mb-2 font-medium" onClick={() => selectElement(null)}>

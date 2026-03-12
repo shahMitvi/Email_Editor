@@ -3,7 +3,7 @@ import Moveable from 'react-moveable';
 import { useBuilderStore } from '../../store/useBuilderStore';
 import type { EmailElement, Page } from '../../store/useBuilderStore';
 import { useDroppable } from '@dnd-kit/core';
-import { FileText, Plus } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { renderBlock } from '../blocks';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,7 +30,8 @@ const AbsoluteEmailBlock = ({
     <div
       id={`el-${element.id}`}
       style={{
-        position:  'absolute',
+        ...element.styles,
+        position: 'absolute',
         left:      `${left}px`,
         top:       `${top}px`,
         width:     element.styles.width  || '200px',
@@ -42,6 +43,7 @@ const AbsoluteEmailBlock = ({
         // Faint outline when NOT selected so user knows it's there
         outline:   isSelected ? 'none' : '1px solid transparent',
         cursor:    'default',
+        backgroundColor: element.styles.backgroundColor as string,
       }}
       onMouseDown={(e) => {
         e.stopPropagation();
@@ -66,7 +68,7 @@ const PageCanvas = ({
   pageIndex: number;
   isActive: boolean;
 }) => {
-  const { selectElement, setCurrentPage, selectedId, updateElement } = useBuilderStore();
+  const { selectElement, setCurrentPage, selectedId, updateElement, canvasSettings } = useBuilderStore();
   const { isOver, setNodeRef } = useDroppable({ id: `page-${page.id}` });
   const moveableRef = useRef<any>(null);
 
@@ -79,16 +81,18 @@ const PageCanvas = ({
   }, [selectedElement?.styles]);
 
   // Resolve the target DOM node — used as a direct HTMLElement (not a function)
-  // so that react-moveable's TypeScript types are satisfied.
   const moveableTarget = selectedElement
     ? (document.getElementById(`el-${selectedElement.id}`) ?? undefined)
     : undefined;
 
   return (
-    <div className="w-full max-w-[600px] flex flex-col">
+    <div 
+      className="flex flex-col items-center" 
+      style={{ width: canvasSettings.width }}
+    >
       {/* Page break separator */}
       {pageIndex > 0 && (
-        <div className="flex items-center gap-3 my-6">
+        <div className="flex items-center gap-3 my-6 w-full">
           <div className="flex-1 border-t-2 border-dashed border-gray-300" />
           <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
             <FileText size={11} />
@@ -97,18 +101,6 @@ const PageCanvas = ({
           <div className="flex-1 border-t-2 border-dashed border-gray-300" />
         </div>
       )}
-
-      {/* Page label */}
-      <div className="flex items-center gap-2 mb-2 px-1">
-        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-indigo-500' : 'bg-gray-300'}`} />
-        <span
-          className={`text-xs font-semibold uppercase tracking-wider ${
-            isActive ? 'text-indigo-500' : 'text-gray-400'
-          }`}
-        >
-          Page {pageIndex + 1} · {page.name}
-        </span>
-      </div>
 
       {/* White page sheet */}
       <div
@@ -121,9 +113,14 @@ const PageCanvas = ({
             selectElement(null);
           }
         }}
-        className={`w-full min-h-[700px] bg-white shadow-md border relative transition-all overflow-visible ${
+        className={`shadow-md border relative transition-all overflow-visible ${
           isActive ? 'border-indigo-300 shadow-indigo-100' : 'border-gray-200'
         } ${isOver ? 'border-indigo-400 border-2 ring-2 ring-indigo-100' : ''}`}
+        style={{
+          width: canvasSettings.width,
+          minHeight: canvasSettings.height,
+          backgroundColor: canvasSettings.backgroundColor,
+        }}
       >
         {/* Empty state */}
         {page.elements.length === 0 && (
@@ -158,28 +155,22 @@ const PageCanvas = ({
           <AbsoluteEmailBlock key={el.id} element={el} pageId={page.id} />
         ))}
 
-        {/* ── react-moveable: one instance per page, targets the selected element ── */}
+        {/* ── react-moveable: one instance per page ── */}
         {selectedElement && (
           <Moveable
             ref={moveableRef}
             target={moveableTarget}
-            // ── Capabilities ─────────────────────────────────────────────
             draggable
             resizable
             rotatable
             keepRatio={false}
-            // All 8 resize handles
             renderDirections={['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se']}
-            // Rotation handle above top-center
             rotationPosition="top"
-            // ── Drag ─────────────────────────────────────────────────────
             onDrag={({ target, left, top }) => {
-              // Update DOM directly for smooth 60fps movement
               target.style.left = `${Math.round(left)}px`;
               target.style.top  = `${Math.round(top)}px`;
             }}
             onDragEnd={({ target }) => {
-              // Sync final position to store
               updateElement(selectedElement.id, {
                 styles: {
                   left: target.style.left,
@@ -187,11 +178,9 @@ const PageCanvas = ({
                 },
               });
             }}
-            // ── Resize ───────────────────────────────────────────────────
             onResize={({ target, width, height, drag }) => {
               target.style.width  = `${Math.round(width)}px`;
               target.style.height = `${Math.round(height)}px`;
-              // drag.left/top accounts for top-left handle dragging
               target.style.left   = `${Math.round(drag.left)}px`;
               target.style.top    = `${Math.round(drag.top)}px`;
             }}
@@ -205,9 +194,7 @@ const PageCanvas = ({
                 },
               });
             }}
-            // ── Rotate ───────────────────────────────────────────────────
             onRotate={({ target, rotation }) => {
-              // rotation is the absolute angle in degrees
               target.style.transform = `rotate(${Math.round(rotation)}deg)`;
             }}
             onRotateEnd={({ target }) => {
@@ -226,17 +213,21 @@ const PageCanvas = ({
 // Canvas — all pages stacked vertically
 // ─────────────────────────────────────────────────────────────────────────────
 export const Canvas = () => {
-  const { pages, currentPageId, selectElement, addPage } = useBuilderStore();
+  const { pages, currentPageId, selectElement, canvasSettings } = useBuilderStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+
+  // Parse width for scaling
+  const canvasWidth = parseInt(canvasSettings.width) || 794;
 
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width } = entry.contentRect;
-        // 600px canvas + 40px horizontal padding
-        if (width < 640) {
-          setScale(width / 640);
+        // Padding is approx 64px total
+        const targetWidth = canvasWidth + 64; 
+        if (width < targetWidth) {
+          setScale(width / targetWidth);
         } else {
           setScale(1);
         }
@@ -245,7 +236,7 @@ export const Canvas = () => {
 
     if (containerRef.current) observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasWidth]);
 
   return (
     <div
@@ -259,7 +250,7 @@ export const Canvas = () => {
       <div 
         className="flex flex-col mb-10 origin-top transition-transform duration-75"
         style={{ 
-          width: '600px', 
+          width: canvasSettings.width, 
           transform: `scale(${scale})`,
         }}
       >
@@ -271,14 +262,6 @@ export const Canvas = () => {
             isActive={page.id === currentPageId}
           />
         ))}
-
-        <button
-          onClick={() => addPage()}
-          className="mt-8 flex items-center gap-2 justify-center text-sm font-medium text-indigo-600 border-2 border-dashed border-indigo-300 rounded-lg py-4 hover:bg-indigo-50 hover:border-indigo-400 transition-all w-full"
-        >
-          <Plus size={16} />
-          Add New Page
-        </button>
       </div>
     </div>
   );

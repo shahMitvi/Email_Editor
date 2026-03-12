@@ -12,13 +12,16 @@ interface PreviewModalProps {
 }
 
 export const PreviewModal = ({ pages, onClose }: PreviewModalProps) => {
-  const { variables } = useBuilderStore();
+  const { variables, canvasSettings } = useBuilderStore();
   const [device, setDevice] = useState<DeviceType>('desktop');
+
+  // Parse width for scaling
+  const canvasWidth = parseInt(canvasSettings.width) || 794;
 
   // Build fresh HTML for the preview — includes all pages
   const previewHtml = useMemo(
-    () => buildEmailHtml(pages, variables, 'Preview'),
-    [pages, variables]
+    () => buildEmailHtml(pages, variables, 'Preview', false, canvasSettings),
+    [pages, variables, canvasSettings]
   );
 
   // Esc to close
@@ -29,11 +32,11 @@ export const PreviewModal = ({ pages, onClose }: PreviewModalProps) => {
   }, [onClose]);
 
   const iframeWidth = device === 'desktop' ? '100%' : device === 'tablet' ? '768px' : '375px';
-  // Standard email width is 600px. If device is smaller than 600px, calculate a scale.
-  const scale = device === 'mobile' ? 375 / 640 : device === 'tablet' ? 1 : 1;
+  // Use dynamic canvas width for scaling calculations
+  const scale = device === 'mobile' ? 375 / (canvasWidth + 40) : 1;
   const containerStyle = device === 'desktop' 
     ? { width: '100%', height: '100%' }
-    : { width: '600px', height: '800px', transform: `scale(${scale})`, transformOrigin: 'top center' };
+    : { width: canvasSettings.width, height: '800px', transform: `scale(${scale})`, transformOrigin: 'top center' };
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#1a1a2e]">

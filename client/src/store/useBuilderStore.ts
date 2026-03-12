@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { temporal } from 'zundo';
+import { persist } from 'zustand/middleware';
 
 export type ElementType = 'text' | 'heading' | 'image' | 'video' | 'button' | 'table' | 'divider' | 'spacer' | 'html' | 'qr';
 export type SidebarTab = 'content' | 'layers' | 'personalize';
@@ -25,6 +26,12 @@ export interface Page {
   elements: EmailElement[];
 }
 
+export interface CanvasSettings {
+  width: string;           // Default "794px" (A4 at 96 DPI)
+  height: string;          // Default "1123px"
+  backgroundColor: string; // Default "#ffffff"
+}
+
 export interface BuilderState {
   pages: Page[];
   currentPageId: string;
@@ -32,6 +39,7 @@ export interface BuilderState {
   hoveredId: string | null;
   activeTab: SidebarTab;
   variables: TemplateVariable[];
+  canvasSettings: CanvasSettings;
   readonly elements: EmailElement[];
   
   // Mobile UI State
@@ -57,6 +65,9 @@ export interface BuilderState {
   moveLayer: (id: string, direction: 'up' | 'down' | 'front' | 'back') => void;
   moveElement: (id: string, newIndex: number, newParentId?: string) => void;
   setActiveTab: (tab: SidebarTab) => void;
+
+  // Canvas actions
+  updateCanvasSettings: (updates: Partial<CanvasSettings>) => void;
 
   // Variable actions
   addVariable: () => void;
@@ -91,13 +102,19 @@ const initialPage = makeDefaultPage('Page 1');
 
 export const useBuilderStore = create<BuilderState>()(
   temporal(
-    (set, get) => ({
-      pages: [initialPage],
+    persist(
+      (set, get) => ({
+        pages: [initialPage],
   currentPageId: initialPage.id,
   selectedId: null,
   hoveredId: null,
   activeTab: 'content',
   variables: [],
+  canvasSettings: {
+    width: '794px',
+    height: '1123px',
+    backgroundColor: '#ffffff',
+  },
   showMobileMenu: false,
 
   setShowMobileMenu: (show) => set({ showMobileMenu: show }),
@@ -252,6 +269,12 @@ export const useBuilderStore = create<BuilderState>()(
       return { pages };
     }),
 
+  // ─── Canvas actions ──────────────────────────────────────────────────────
+  updateCanvasSettings: (updates) =>
+    set((state) => ({
+      canvasSettings: { ...state.canvasSettings, ...updates },
+    })),
+
   // ─── Variable actions ─────────────────────────────────────────────────────
   addVariable: () =>
     set((state) => ({
@@ -270,7 +293,17 @@ export const useBuilderStore = create<BuilderState>()(
     set((state) => ({
       variables: state.variables.filter((v) => v.id !== id),
     })),
-  }),
+      }),
+      {
+        name: 'email-builder-storage',
+        partialize: (state) => ({
+          pages: state.pages,
+          currentPageId: state.currentPageId,
+          variables: state.variables,
+          canvasSettings: state.canvasSettings,
+        }),
+      }
+    ),
   { 
     partialize: (state) => ({ pages: state.pages }),
     equality: (pastState, currentState) => pastState.pages === currentState.pages,

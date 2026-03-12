@@ -1,9 +1,8 @@
-
 import { Navbar } from './Navbar';
 import { LeftSidebar } from './LeftSidebar';
 import { RightSidebar } from './RightSidebar';
 import { Canvas } from '../builder/Canvas';
-import { PageTabs } from '../builder/PageTabs';
+// import { PageTabs } from '../builder/PageTabs';
 import { DndContext } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -135,7 +134,7 @@ export const Layout = () => {
     <DndContext onDragEnd={handleDragEnd}>
       <div className="h-screen w-full flex flex-col bg-gray-100 overflow-hidden font-sans">
         <Navbar />
-        <PageTabs />
+        {/* <PageTabs /> */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           <LeftSidebar />
           <Canvas />

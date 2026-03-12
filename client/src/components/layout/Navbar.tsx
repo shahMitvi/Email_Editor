@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Send, LayoutGrid, Layers, Settings2, Undo, Redo, Eye, Save, Check, X, Menu } from 'lucide-react';
+import { Send, LayoutGrid, Layers, Undo, Redo, Eye, Save, Check, X, Menu, FileText, Database } from 'lucide-react';
 import { useBuilderStore, useTemporalStore } from '../../store/useBuilderStore';
 import { downloadHtmlFile } from '../../utils/exportHtml';
 import { PreviewModal } from '../builder/PreviewModal';
+import { mapStateToDBPayload } from '../../utils/mapper';
+import { buildEmailHtml } from '../../utils/exportHtml';
 
 export const Navbar = () => {
   const { activeTab, setActiveTab, pages, variables, setShowMobileMenu } = useBuilderStore();
@@ -11,19 +13,90 @@ export const Navbar = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [filename, setFilename] = useState('email');
   const [savedFeedback, setSavedFeedback] = useState(false);
-
+  const [isGeneratePdf, setIsGeneratedPdf] = useState(false);
+  const [templateId, setTemplateId] = useState<string | null>(null);
   // Undo/Redo state from zundo directly via getState()
   const temporalState = useTemporalStore?.getState?.() || { pastStates: [], futureStates: [], undo: () => {}, redo: () => {} };
   const { undo, redo, pastStates, futureStates } = temporalState;
 
-  const handleSave = () => {
+  const handleSave = async (silent = false) => {
+    const { pages, variables, canvasSettings } = useBuilderStore.getState();
     const name = filename.trim() || 'email';
-    const finalName = name.endsWith('.html') ? name : `${name}.html`;
-    downloadHtmlFile(pages, variables, finalName, name);
-    setShowSaveModal(false);
-    // Brief success feedback on the button
-    setSavedFeedback(true);
-    setTimeout(() => setSavedFeedback(false), 2000);
+    const baseHtml = buildEmailHtml(pages, variables, name, true, canvasSettings);
+    const dbPayload = mapStateToDBPayload(useBuilderStore.getState(), name);
+    const payload = { ...dbPayload, base_html: baseHtml };
+    
+    try {
+      const url = templateId 
+        ? `http://localhost:8000/api/save-templates?template_id=${templateId}`
+        : "http://localhost:8000/api/save-templates";
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const newId = data._id;
+        setTemplateId(newId);
+        
+        if (!silent) {
+          setSavedFeedback(true);
+          // Trigger local download
+          downloadHtmlFile(pages, variables, name, name, canvasSettings);
+          setTimeout(() => setSavedFeedback(false), 2000);
+          setShowSaveModal(false);
+        }
+        return newId;
+      } else {
+        if (!silent) alert("Failed to save template.");
+        return null;
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      return null;
+    }
+  };
+
+
+  const handleExportPDF = async () => {
+    setIsGeneratedPdf(true);
+    try {
+      let currentId = templateId;
+      if (!currentId) {
+        // Force save first
+        currentId = await handleSave(true);
+      }
+
+      if (!currentId) {
+        throw new Error("Cannot generate PDF without saving template first.");
+      }
+
+      const response = await fetch("http://localhost:8000/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_id: currentId })
+      });
+
+      if (!response.ok) throw new Error("Could not generate PDF");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filename.trim() || 'email'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Error exporting PDF");
+    } finally {
+      setIsGeneratedPdf(false);
+    }
   };
 
   return (
@@ -67,8 +140,8 @@ export const Navbar = () => {
             onClick={() => setActiveTab('personalize')}
             className={`px-3 md:px-6 py-4 text-xs md:text-sm font-semibold flex items-center gap-1.5 md:gap-2 border-b-2 transition-colors ${activeTab === 'personalize' ? 'text-indigo-600 border-indigo-600' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
           >
-            <Settings2 size={16} className="shrink-0" />
-            <span className="hidden md:inline">PERSONALIZE</span>
+            <Database size={16} className="shrink-0" />
+            <span className="hidden md:inline">Variable</span>
           </button>
         </div>
 
@@ -99,7 +172,16 @@ export const Navbar = () => {
             <Eye size={16} />
             <span className="hidden md:inline ml-2">Preview</span>
           </button>
+          {/*Export PDF Button */}
 
+          <button 
+            onClick={handleExportPDF}
+            disabled={totalElements === 0 || isGeneratePdf}
+            className='flex items-center justify-center p-2 md:px-3 md:py-1.5 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+            title='Export  as PDF'>
+              <FileText size={16} />
+              <span className='hidden md:inline ml-2'>{isGeneratePdf ? 'Generating...': 'Export PDF'}</span>
+            </button>
           {/* Save button */}
           <button
             onClick={() => setShowSaveModal(true)}
@@ -179,7 +261,7 @@ export const Navbar = () => {
                 Cancel
               </button>
               <button
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={!filename.trim()}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >

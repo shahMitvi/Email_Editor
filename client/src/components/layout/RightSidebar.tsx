@@ -136,14 +136,13 @@ export const RightSidebar = () => {
                     </select>
                   </div>
 
-                  {/* Heading text */}
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Heading Text</label>
-                    <input
-                      type="text"
+                    <textarea
                       value={selectedElement.content.text || ''}
                       onChange={(e) => handleContentChange('text', e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                      rows={2}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
                       placeholder="Heading"
                     />
                   </div>
@@ -666,37 +665,40 @@ export const RightSidebar = () => {
                   </div>
                 )}
 
-                {/* Background color – button */}
-                {selectedElement.type === 'button' && (
-                  <>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-gray-600 mb-1">Background Color</label>
-                      <div className="flex gap-1">
-                        <input
-                          type="color"
-                          value={selectedElement.styles.backgroundColor || '#4f46e5'}
-                          onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
-                          className="w-8 h-8 rounded border border-gray-200 cursor-pointer p-0.5 shrink-0"
-                        />
-                        <input
-                          type="text"
-                          value={selectedElement.styles.backgroundColor || ''}
-                          onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Border Radius</label>
+                {/* Background color – overall element background */}
+                {!['divider', 'spacer'].includes(selectedElement.type) && (
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-600 mb-1">Background Color</label>
+                    <div className="flex gap-1">
+                      <input
+                        type="color"
+                        value={selectedElement.styles.backgroundColor || '#ffffff'}
+                        onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
+                        className="w-8 h-8 rounded border border-gray-200 cursor-pointer p-0.5 shrink-0"
+                      />
                       <input
                         type="text"
-                        value={selectedElement.styles.borderRadius || ''}
-                        onChange={(e) => handleStyleChange('borderRadius', e.target.value)}
-                        placeholder="4px"
-                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                        value={selectedElement.styles.backgroundColor || ''}
+                        onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
+                        placeholder="Transparent"
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs"
                       />
                     </div>
-                  </>
+                  </div>
+                )}
+
+                {/* Specific button styling */}
+                {selectedElement.type === 'button' && (
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Border Radius</label>
+                    <input
+                      type="text"
+                      value={selectedElement.styles.borderRadius || ''}
+                      onChange={(e) => handleStyleChange('borderRadius', e.target.value)}
+                      placeholder="4px"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
                 )}
 
                 {/* Divider color */}
@@ -742,13 +744,90 @@ export const RightSidebar = () => {
 
           </div>
         ) : (
-          /* ── Empty state ── */
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
-            <Settings2 size={32} className="mb-3 opacity-20" />
-            <p className="text-sm font-medium text-gray-500">No element selected</p>
-            <p className="text-xs mt-1 max-w-[180px] leading-relaxed">
-              Click on any element on the canvas to edit its properties here.
-            </p>
+          /* ── Canvas Settings ── */
+          <div className="p-4 space-y-6">
+            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded uppercase tracking-wider">
+                Document
+              </span>
+              <span className="text-xs text-gray-400">Canvas Settings</span>
+            </div>
+
+            {/* Canvas Size */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold text-gray-800 flex items-center gap-2">
+                <Layout size={14} /> Page Size
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Width</label>
+                  <input
+                    type="text"
+                    value={useBuilderStore.getState().canvasSettings.width}
+                    onChange={(e) => useBuilderStore.getState().updateCanvasSettings({ width: e.target.value })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Height</label>
+                  <input
+                    type="text"
+                    value={useBuilderStore.getState().canvasSettings.height}
+                    onChange={(e) => useBuilderStore.getState().updateCanvasSettings({ height: e.target.value })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Size Presets */}
+              <div className="flex flex-wrap gap-1 mt-2">
+                {[
+                  { label: 'A4', w: '794px', h: '1123px' },
+                  { label: 'Letter', w: '816px', h: '1056px' },
+                  { label: 'Square', w: '800px', h: '800px' },
+                  { label: 'Mobile', w: '375px', h: '812px' },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => useBuilderStore.getState().updateCanvasSettings({ width: preset.w, height: preset.h })}
+                    className="px-2 py-1 text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Background Color */}
+            <div className="space-y-3 pt-4 border-t border-gray-100">
+              <h3 className="text-xs font-semibold text-gray-800 flex items-center gap-2">
+                <PaintBucket size={14} /> Background
+              </h3>
+              <div className="flex gap-1">
+                <input
+                  type="color"
+                  value={useBuilderStore.getState().canvasSettings.backgroundColor}
+                  onChange={(e) => useBuilderStore.getState().updateCanvasSettings({ backgroundColor: e.target.value })}
+                  className="w-8 h-8 rounded border border-gray-200 cursor-pointer p-0.5 shrink-0"
+                />
+                <input
+                  type="text"
+                  value={useBuilderStore.getState().canvasSettings.backgroundColor}
+                  onChange={(e) => useBuilderStore.getState().updateCanvasSettings({ backgroundColor: e.target.value })}
+                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Help text */}
+            <div className="pt-4 mt-auto">
+              <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                <p className="text-[11px] text-indigo-700 leading-relaxed">
+                  <strong>Pro Tip:</strong> These settings apply to the entire document. When you export to PDF, the page size will match these dimensions.
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>

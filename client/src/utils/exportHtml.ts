@@ -2,14 +2,17 @@ import type { EmailElement, Page, TemplateVariable } from '../store/useBuilderSt
 
 
 // Variable Interpolation Helper
-function applyVariables(text: string, variables: TemplateVariable[] = []): string {
+function applyVariables(text: string, variables: TemplateVariable[] = [], keepVariablesIntact = false): string {
   if (!text) return text;
-  let result = text;
+  if (keepVariablesIntact) return String(text); // Do not substitute anything
+
+  let result = String(text);
   variables.forEach((v) => {
     if (v.name) {
-      const safeName = v.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\$\\{${safeName}\\}`, 'g');
-      result = result.replace(regex, v.fallback || '');
+      const safeName = String(v.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\$\\{\\s*${safeName}\\s*\\}`, 'g');
+      const fallbackValue = v.fallback !== undefined && v.fallback !== null ? String(v.fallback) : '';
+      result = result.replace(regex, fallbackValue);
     }
   });
   return result;
@@ -17,7 +20,7 @@ function applyVariables(text: string, variables: TemplateVariable[] = []): strin
 
 // Per-element HTML serializers
 
-function serializeText(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeText(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   const s = el.styles;
   // If it's explicitly a heading block, respect headingLevel. Otherwise, render as paragraph.
   const tag = el.type === 'heading' 
@@ -25,7 +28,7 @@ function serializeText(el: EmailElement, vars: TemplateVariable[]): string {
     : 'p';
     
   let rawText = el.content.text || (el.type === 'heading' ? 'Heading' : 'Your text here');
-  const text = applyVariables(rawText, vars);
+  const text = applyVariables(rawText, vars, keepVars).replace(/\n/g, '<br />');
 
   const fontSize   = s.fontSize   || (el.type === 'heading' ? '32px' : '16px');
   const fontWeight = s.fontWeight || (el.type === 'heading' ? '700' : '400');
@@ -39,23 +42,23 @@ function serializeText(el: EmailElement, vars: TemplateVariable[]): string {
   return `<${tag} style="${style}">${text}</${tag}>`;
 }
 
-function serializeImage(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeImage(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   const w = el.styles.width || '100%';
   const rawSrc = el.content.url || '';
-  const src = applyVariables(rawSrc, vars);
-  const alt = applyVariables(el.content.alt || '', vars);
+  const src = applyVariables(rawSrc, vars, keepVars);
+  const alt = applyVariables(el.content.alt || '', vars, keepVars);
 
   if (!src) return `<div style="width:${w};height:80px;background:#f3f4f6;border:1px dashed #d1d5db;text-align:center;line-height:80px;color:#9ca3af;font-size:14px;font-family:Arial,sans-serif">No Image</div>`;
   return `<img src="${src}" alt="${alt}" style="display:block;width:100%;max-width:${w};height:auto;border:0" />`;
 }
 
-function serializeButton(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeButton(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   const s = el.styles;
   const rawText = el.content.text || 'Click Here';
   const rawUrl = el.content.url || '#';
   
-  const text = applyVariables(rawText, vars);
-  const url = applyVariables(rawUrl, vars);
+  const text = applyVariables(rawText, vars, keepVars);
+  const url = applyVariables(rawUrl, vars, keepVars);
 
   const bg = s.backgroundColor || '#4f46e5';
   const color = s.color || '#ffffff';
@@ -78,12 +81,12 @@ function serializeSpacer(el: EmailElement): string {
   return `<div style="height:${h};line-height:${h};font-size:1px">&nbsp;</div>`;
 }
 
-function serializeVideo(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeVideo(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   const rawThumb = el.content.thumbnailUrl || 'https://via.placeholder.com/600x337/1a1a2e/ffffff?text=Video';
   const rawUrl = el.content.url || '#';
   
-  const thumb = applyVariables(rawThumb, vars);
-  const url = applyVariables(rawUrl, vars);
+  const thumb = applyVariables(rawThumb, vars, keepVars);
+  const url = applyVariables(rawUrl, vars, keepVars);
   const w = el.styles.width || '100%';
 
   return `
@@ -127,20 +130,31 @@ function serializeTable(el: EmailElement): string {
   return html;
 }
 
-function serializeHtml(el: EmailElement, vars: TemplateVariable[]): string {
-  return applyVariables(el.content.code || '', vars);
+function serializeHtml(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
+  return applyVariables(el.content.code || '', vars, keepVars);
 }
 
-function serializeQr(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeQr(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   const rawData = el.content.data || 'https://example.com';
-  const data = applyVariables(rawData, vars);
+  const data = applyVariables(rawData, vars, keepVars);
   
   const wStr = el.styles.width as string || '150px';
   const hStr = el.styles.height as string || '150px';
   const size = Math.min(parseFloat(wStr) || 150, parseFloat(hStr) || 150);
   
   // Use quickchart API to generate static QR code image for email clients
-  const url = `https://quickchart.io/qr?text=${encodeURIComponent(data)}&size=${size}&margin=0`;
+  // We encode then replace encoded placeholders back to literal form so backend can find them
+  let encodedData = encodeURIComponent(data);
+  vars.forEach(v => {
+    if (v.name) {
+      const literal = `\${${v.name}}`;
+      const encoded = encodeURIComponent(literal);
+      // Replace %24%7BName%7D with ${Name}
+      encodedData = encodedData.split(encoded).join(literal);
+    }
+  });
+
+  const url = `https://quickchart.io/qr?text=${encodedData}&size=${size}&margin=0`;
 
   return `<img src="${url}" alt="QR Code" style="display:block;width:${size}px;height:${size}px;border:0" />`;
 }
@@ -148,18 +162,18 @@ function serializeQr(el: EmailElement, vars: TemplateVariable[]): string {
 
 // Dispatcher
 
-function serializeElement(el: EmailElement, vars: TemplateVariable[]): string {
+function serializeElement(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
   switch (el.type) {
-    case 'text':    return serializeText(el, vars);
-    case 'heading': return serializeText(el, vars);
-    case 'image':   return serializeImage(el, vars);
-    case 'button':  return serializeButton(el, vars);
+    case 'text':    return serializeText(el, vars, keepVars);
+    case 'heading': return serializeText(el, vars, keepVars);
+    case 'image':   return serializeImage(el, vars, keepVars);
+    case 'button':  return serializeButton(el, vars, keepVars);
     case 'divider': return serializeDivider(el);
     case 'spacer':  return serializeSpacer(el);
-    case 'video':   return serializeVideo(el, vars);
+    case 'video':   return serializeVideo(el, vars, keepVars);
     case 'table':   return serializeTable(el);
-    case 'html':    return serializeHtml(el, vars);
-    case 'qr':      return serializeQr(el, vars);
+    case 'html':    return serializeHtml(el, vars, keepVars);
+    case 'qr':      return serializeQr(el, vars, keepVars);
     default:        return '';
   }
 }
@@ -167,25 +181,28 @@ function serializeElement(el: EmailElement, vars: TemplateVariable[]): string {
 
 // Build full email HTML document
 
-export function buildEmailHtml(pages: Page[], variables: TemplateVariable[] = [], title = 'Email'): string {
-  // Render each page's elements in order; separate pages with a dashed rule.
-  // CRITICAL: The page container MUST be relative with fixed height so absolute elements position correctly inside it.
-  const pagesHtml = pages
-    .map((page, pi) => {
-      // Find the max height of elements on the page to set a safe container height
-      let maxH = 800;
-      page.elements.forEach(el => {
-        const top = parseFloat(el.styles.top) || 0;
-        const h = parseFloat(el.styles.height) || 100; // heuristic
-        if (top + h > maxH) maxH = top + h + 50;
-      });
+export function buildEmailHtml(
+  pages: Page[], 
+  variables: TemplateVariable[] = [], 
+  title = 'Email', 
+  keepVariablesIntact = false,
+  canvasSettings = { width: '794px', height: '1123px', backgroundColor: '#ffffff' }
+): string {
+  const allElements = pages.flatMap(p => p.elements);
 
-      const elementsHtml = page.elements
-        .map((el) => `\n    <!-- ${el.type} -->\n    <div style="position:absolute;left:${el.styles.left||'0px'};top:${el.styles.top||'0px'};z-index:${el.styles.zIndex||10};width:${el.styles.width||'auto'}">\n      ${serializeElement(el, variables)}\n    </div>`)
-        .join('\n');
-      return `<!-- ====== Page ${pi + 1}: ${page.name} ====== -->\n    <div style="position:relative;width:100%;min-height:${maxH}px;background:#ffffff;margin:0 auto;overflow:hidden">\n${elementsHtml}\n    </div>`;
+  // Use canvas settings for sizing
+  const width = canvasSettings.width;
+  const minHeight = canvasSettings.height;
+  const canvasBg = canvasSettings.backgroundColor;
+
+  const elementsHtml = allElements
+    .map((el) => {
+      const bgStyle = el.styles.backgroundColor ? `background-color:${el.styles.backgroundColor};` : '';
+      return `\n    <!-- ${el.type} -->\n    <div style="position:absolute;left:${el.styles.left||'0px'};top:${el.styles.top||'0px'};z-index:${el.styles.zIndex||10};width:${el.styles.width||'auto'};${bgStyle}">\n      ${serializeElement(el, variables, keepVariablesIntact)}\n    </div>`;
     })
-    .join('\n\n    <!-- Page break -->\n    <div style="width:100%;height:2px;background:#e5e7eb;margin:24px 0"></div>\n\n    ');
+    .join('\n');
+
+  const contentHtml = `\n    <div style="position:relative;width:${width};min-height:${minHeight};background:${canvasBg};margin:0 auto;overflow:hidden">\n${elementsHtml}\n    </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -203,7 +220,7 @@ export function buildEmailHtml(pages: Page[], variables: TemplateVariable[] = []
     body { margin:0; padding:0; background-color:#f3f4f6; font-family:Arial,Helvetica,sans-serif; }
     table { border-spacing:0; }
     img { border:0; display:block; }
-    @media only screen and (max-width:600px) {
+    @media only screen and (max-width:${width}) {
       .email-container, .email-container table, .email-container div { 
         width: 100% !important; 
         max-width: 100% !important;
@@ -217,10 +234,10 @@ export function buildEmailHtml(pages: Page[], variables: TemplateVariable[] = []
 </head>
 <body style="margin:0;padding:0;background-color:#f3f4f6">
   <center>
-    <table role="presentation" width="600" class="email-container" style="margin:0 auto;background:#ffffff" cellpadding="0" cellspacing="0" border="0">
+    <table role="presentation" width="${width}" class="email-container" style="margin:0 auto;background:${canvasBg}" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td style="padding:0">
-          ${pagesHtml}
+          ${contentHtml}
         </td>
       </tr>
     </table>
@@ -232,13 +249,19 @@ export function buildEmailHtml(pages: Page[], variables: TemplateVariable[] = []
 
 // Download helper — triggers browser file download
 
-export function downloadHtmlFile(pages: Page[], variables: TemplateVariable[] = [], filename = 'email.html', title = 'Email') {
-  const html = buildEmailHtml(pages, variables, title);
+export function downloadHtmlFile(
+  pages: Page[], 
+  variables: TemplateVariable[] = [], 
+  filename = 'email.html', 
+  title = 'Email',
+  canvasSettings?: { width: string; height: string; backgroundColor: string }
+) {
+  const html = buildEmailHtml(pages, variables, title, false, canvasSettings);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = filename.endsWith('.html') ? filename : `${filename}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
