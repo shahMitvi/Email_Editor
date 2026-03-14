@@ -1,0 +1,14 @@
+node_modules
+dist
+.vite
+.env
+build
+editorenv
+__pycache__
+databse.py
+output.json
+test_local.pdf
+test_output.pdf
+dynamic_variables_workflow.md
+models.py
+test-drag.js

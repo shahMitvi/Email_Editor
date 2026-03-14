@@ -431,7 +431,7 @@ export const RightSidebar = () => {
                             </label>
                             {tableVariables.length === 0 ? (
                               <div className="p-2.5 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
-                                No Table variables found. Go to the <strong>Personalize</strong> tab and add a Table variable.
+                                No Table variables found. Go to the <strong>Variables</strong> tab and add a Table variable.
                               </div>
                             ) : (
                               <select
@@ -665,11 +665,11 @@ export const RightSidebar = () => {
                   <input type="text" value={useBuilderStore.getState().canvasSettings.backgroundColor} onChange={(e) => useBuilderStore.getState().updateCanvasSettings({ backgroundColor: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-indigo-500" />
                 </div>
               </div>
-              <div className="pt-4">
+              {/* <div className="pt-4">
                 <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
                   <p className="text-[11px] text-indigo-700 leading-relaxed"><strong>Pro Tip:</strong> These settings apply to the entire document. When you export to PDF, the page size will match these dimensions.</p>
                 </div>
-              </div>
+              </div> */}
             </div>
           )}
         </div>
