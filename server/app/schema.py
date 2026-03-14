@@ -3,9 +3,11 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class VariableSchema(BaseModel):
-    id:str
+    id: Optional[str] = None
     name: str
-    fallback: str
+    type: str = "normal"
+    fallback: Any = ""
+
 
 class GlobalSettingsSchema(BaseModel):
     backgroundColor: str = "#f3f4f6"
@@ -53,6 +55,8 @@ class EmailTemplateResponse(EmailTemplateCreate):
 class PDFRequest(BaseModel):
     html_content: Optional[str] = None
     template_id: Optional[str] = None
+    dynamic_data: Dict[str, Any] = {}
+
 
 class DynamicRenderRequest(BaseModel):
     dynamic_data: Dict[str, Any] = {}

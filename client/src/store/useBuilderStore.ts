@@ -6,10 +6,22 @@ import { persist } from 'zustand/middleware';
 export type ElementType = 'text' | 'heading' | 'image' | 'video' | 'button' | 'table' | 'divider' | 'spacer' | 'html' | 'qr';
 export type SidebarTab = 'content' | 'layers' | 'personalize';
 
+export type VariableType = 'normal' | 'table';
+
+export interface ColumnMapping {
+  id: string;
+  header: string;
+  type: 'data' | 'formula';
+  dataKey: string;
+  formula: string;
+  footerAggregation: 'none' | 'sum' | 'avg' | 'count';
+}
+
 export interface TemplateVariable {
   id: string;
   name: string;
-  fallback: string;
+  type: VariableType;
+  fallback: string | Record<string, string>[];
 }
 
 export interface EmailElement {
@@ -280,7 +292,7 @@ export const useBuilderStore = create<BuilderState>()(
     set((state) => ({
       variables: [
         ...state.variables,
-        { id: uuidv4(), name: `variable_${state.variables.length + 1}`, fallback: 'Default' },
+        { id: uuidv4(), name: `variable_${state.variables.length + 1}`, type: 'normal' as VariableType, fallback: 'Default' },
       ],
     })),
 

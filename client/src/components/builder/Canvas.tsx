@@ -3,7 +3,7 @@ import Moveable from 'react-moveable';
 import { useBuilderStore } from '../../store/useBuilderStore';
 import type { EmailElement, Page } from '../../store/useBuilderStore';
 import { useDroppable } from '@dnd-kit/core';
-import { FileText } from 'lucide-react';
+import { FileText, GripVertical } from 'lucide-react';
 import { renderBlock } from '../blocks';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,23 +35,36 @@ const AbsoluteEmailBlock = ({
         left:      `${left}px`,
         top:       `${top}px`,
         width:     element.styles.width  || '200px',
-        height:    element.styles.height || 'auto',
+        height:    'auto',
+        minHeight: element.styles.height || '30px',
         transform: element.styles.transform || '',
-        zIndex:    (element.styles.zIndex as number) || 10,
+        zIndex:    isSelected ? 50 : ((element.styles.zIndex as number) || 10),
         boxSizing: 'border-box',
-        overflow:  'hidden',
+        overflow:  'visible', // Allow handle to stick out
         // Faint outline when NOT selected so user knows it's there
         outline:   isSelected ? 'none' : '1px solid transparent',
         cursor:    'default',
         backgroundColor: element.styles.backgroundColor as string,
       }}
       onMouseDown={(e) => {
+        if (isSelected) return; // Allow click to pass through to content (like table cells) if already selected
         e.stopPropagation();
         setCurrentPage(pageId);
         selectElement(element.id);
       }}
     >
-      {renderBlock(element)}
+      {isSelected && (
+        <div 
+          className="absolute -top-7 left-0 flex items-center gap-1 px-2 py-1 bg-indigo-600 text-white rounded-t-md shadow-md cursor-move select-none z-[1000]"
+          onMouseDown={(e) => e.stopPropagation()} // Stop bubble to AbsoluteEmailBlock
+        >
+          <GripVertical size={12} className="opacity-80" />
+          <span className="text-[9px] font-bold uppercase tracking-wider">{element.type}</span>
+        </div>
+      )}
+      <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: element.styles.borderRadius }}>
+        {renderBlock(element)}
+      </div>
     </div>
   );
 };
@@ -63,10 +76,12 @@ const PageCanvas = ({
   page,
   pageIndex,
   isActive,
+  scale,
 }: {
   page: Page;
   pageIndex: number;
   isActive: boolean;
+  scale: number;
 }) => {
   const { selectElement, setCurrentPage, selectedId, updateElement, canvasSettings } = useBuilderStore();
   const { isOver, setNodeRef } = useDroppable({ id: `page-${page.id}` });
@@ -78,7 +93,7 @@ const PageCanvas = ({
   // When element style changes from the RightSidebar panel, keep Moveable in sync
   useEffect(() => {
     moveableRef.current?.updateRect();
-  }, [selectedElement?.styles]);
+  }, [selectedElement?.styles, selectedElement?.content]);
 
   // Resolve the target DOM node — used as a direct HTMLElement (not a function)
   const moveableTarget = selectedElement
@@ -163,9 +178,17 @@ const PageCanvas = ({
             draggable
             resizable
             rotatable
+            checkInput={true}
+            zoom={scale}
             keepRatio={false}
             renderDirections={['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se']}
             rotationPosition="top"
+            onDragStart={({ inputEvent }) => {
+              // Don't drag if clicking a column resizer
+              if ((inputEvent.target as HTMLElement)?.classList.contains('cursor-col-resize')) {
+                return false;
+              }
+            }}
             onDrag={({ target, left, top }) => {
               target.style.left = `${Math.round(left)}px`;
               target.style.top  = `${Math.round(top)}px`;
@@ -260,6 +283,7 @@ export const Canvas = () => {
             page={page}
             pageIndex={i}
             isActive={page.id === currentPageId}
+            scale={scale}
           />
         ))}
       </div>

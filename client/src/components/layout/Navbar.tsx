@@ -7,7 +7,7 @@ import { mapStateToDBPayload } from '../../utils/mapper';
 import { buildEmailHtml } from '../../utils/exportHtml';
 
 export const Navbar = () => {
-  const { activeTab, setActiveTab, pages, variables, setShowMobileMenu } = useBuilderStore();
+  const { activeTab, setActiveTab, pages, setShowMobileMenu } = useBuilderStore();
   const totalElements = pages.reduce((sum, p) => sum + p.elements.length, 0);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
