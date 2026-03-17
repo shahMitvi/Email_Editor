@@ -1,7 +1,6 @@
 import asyncio
 import sys
 
-# MUST be set before anything else
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -19,22 +18,20 @@ from bson import ObjectId
 
 from .databse import client, get_db
 from .schema import EmailTemplateCreate, EmailTemplateResponse, PDFRequest, BulkRenderRequest
+from .s3_utils import generate_presigned_url
 
 
-# ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ──
+   
     print("Starting worker process... Initializing Playwright")
 
-    # Launch Playwright browser and store on app.state
     playwright_instance = await async_playwright().start()
     browser = await playwright_instance.chromium.launch(headless=True)
     app.state.playwright = playwright_instance
     app.state.browser = browser
     print("Playwright browser launched.")
 
-    # Check MongoDB
     try:
         await client.admin.command('ping')
         print("Connected to MongoDB Atlas!")
@@ -43,17 +40,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ──
     print("Shutting down... Closing browser")
     await browser.close()
     await playwright_instance.stop()
     client.close()
 
 
-# ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Email Builder API", lifespan=lifespan)
 
-# ─── CORS — fix: proper formatting, all origins for dev ──────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -70,19 +64,15 @@ app.add_middleware(
 )
 
 
-# ─── Rendering Helpers ────────────────────────────────────────────────────────
-def eval_formula(formula: str, row_data: Dict[str, Any]) -> str:
+def eval_formula(formula: str, row_data: dict[str, any]) -> str:
     """Evaluates a math formula like '{a}*{b}' using row data."""
     try:
         expr = formula
         for k, v in row_data.items():
-            # Replace {key} with numeric value
             val = str(v) if v is not None else "0"
             expr = expr.replace(f"{{{k}}}", val)
-        # Simple sanitize: only allow numbers, operators, dots, and parens
         if not re.match(r'^[0-9+\-*/().\s]+$', expr):
             return "#VAL!"
-        # Using eval with restricted builtins
         res = eval(expr, {"__builtins__": None}, {})
         if isinstance(res, (int, float)):
             return f"{res:.2f}".rstrip('0').rstrip('.')
@@ -91,7 +81,7 @@ def eval_formula(formula: str, row_data: Dict[str, Any]) -> str:
         return "#ERR"
 
 
-def render_table_from_config(config: Dict[str, Any], data_list: List[Dict[str, Any]], variables_config: List[Dict[str, Any]]) -> str:
+def render_table_from_config(config: dict[str, any], data_list: list[dict[str, any]], variables_config: list[dict[str, any]]) -> str:
     """Expansion logic for dynamic tables using a configuration object and data list."""
     mappings = config.get("columnMappings", [])
     border_color = config.get("borderColor", "#000000")
@@ -104,13 +94,11 @@ def render_table_from_config(config: Dict[str, Any], data_list: List[Dict[str, A
     footer_style = f"border:1px solid {border_color};padding:{cell_padding};font-family:Arial,sans-serif;font-size:14px;font-weight:bold;background:#f3f4f6;vertical-align:top;box-sizing:border-box;"
 
     html = '<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;table-layout:auto;">'
-    # Header
     html += '<thead><tr>'
     for col in mappings:
         html += f'<th style="{th_style}">{col.get("header","")}</th>'
     html += '</tr></thead><tbody>'
     
-    # Data rows
     if not data_list:
         html += f'<tr><td colspan="{len(mappings)}" style="{td_style}text-align:center;color:#9ca3af;font-style:italic;">No data</td></tr>'
     else:
@@ -127,7 +115,6 @@ def render_table_from_config(config: Dict[str, Any], data_list: List[Dict[str, A
             html += '</tr>'
     html += '</tbody>'
 
-    # Footer Aggregations
     has_footer = any(c.get("footerAggregation") and c.get("footerAggregation") != "none" for c in mappings)
     if has_footer:
         html += '<tfoot><tr>'
@@ -155,20 +142,16 @@ def render_table_from_config(config: Dict[str, Any], data_list: List[Dict[str, A
     return html
 
 
-def find_element_config(el_id: str, content_json: Dict[str, Any], layers: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def find_element_config(el_id: str, content_json: dict[str, any], layers: list[dict[str, any]]) -> Optional[dict[str, any]]:
     """Locates an element's configuration by ID in either layers or contentJSON."""
-    # Search in layers (props)
     for layer in layers:
         if layer.get("id") == el_id:
             return layer.get("props", {})
     
-    # Search in contentJSON (recursively)
     def search_json(node):
         if not isinstance(node, dict): return None
-        # Check node attributes
         attrs = node.get("attrs", {})
         if attrs.get("id") == el_id: return attrs
-        # Fallback: if node is a table and dynamic, it might be our target if ID matches or is missing
         if node.get("type") == "table" and (attrs.get("id") == el_id or attrs.get("isDynamic")):
              return attrs
         for child in node.get("content", []):
@@ -179,13 +162,12 @@ def find_element_config(el_id: str, content_json: Dict[str, Any], layers: List[D
     return search_json(content_json)
 
 
-def render_template_content(base_html: str, variables_config: List[Dict[str, Any]], template_config: Dict[str, Any], user_data: Dict[str, Any]) -> str:
+def render_template_content(base_html: str, variables_config: list[dict[str, any]], template_config: dict[str, any], user_data: dict[str, any]) -> str:
     """Full rendering engine: variable interpolation + dynamic table expansion."""
     rendered_html = base_html
     content_json = template_config.get("contentJSON", {})
     layers = template_config.get("layers", [])
 
-    # 1. Dynamic Table Expansion
     marker_pattern = r'<!-- DYNAMIC_TABLE_START:(.*?) -->.*?<!-- DYNAMIC_TABLE_END -->'
     
     def replace_marker(match):
@@ -196,7 +178,6 @@ def render_template_content(base_html: str, variables_config: List[Dict[str, Any
         var_name = config.get("dataSourceVariable")
         data_list = user_data.get(var_name)
         
-        # Fallback to variable fallback if not provided in user_data
         if data_list is None:
             for v in variables_config:
                 if v.get("name") == var_name:
@@ -210,7 +191,6 @@ def render_template_content(base_html: str, variables_config: List[Dict[str, Any
 
     rendered_html = re.sub(marker_pattern, replace_marker, rendered_html, flags=re.DOTALL)
 
-    # 2. Variable Replacement
     for var in variables_config:
         var_name = var.get("name")
         if not var_name: continue
@@ -221,7 +201,6 @@ def render_template_content(base_html: str, variables_config: List[Dict[str, Any
         if actual_value is None or actual_value == "":
             actual_value = fallback
         
-        # Skip objects/lists for standard replacement (already handled by tables or not intended for text)
         if isinstance(actual_value, (list, dict)):
             continue
 
@@ -233,8 +212,6 @@ def render_template_content(base_html: str, variables_config: List[Dict[str, Any
 
     return rendered_html
 
-
-# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():
@@ -252,14 +229,12 @@ async def create_template(
         template_dict["updatedAt"] = datetime.utcnow()
 
         if template_id:
-            # Update existing document
             await db["email_templates"].update_one(
                 {"_id": ObjectId(template_id)},
                 {"$set": template_dict}
             )
             saved = await db["email_templates"].find_one({"_id": ObjectId(template_id)})
         else:
-            # Insert new document
             template_dict["createdAt"] = datetime.utcnow()
             result = await db["email_templates"].insert_one(template_dict)
             saved = await db["email_templates"].find_one({"_id": result.inserted_id})
@@ -273,6 +248,21 @@ async def create_template(
     except Exception as e:
         print(f"Error saving template: {e}")
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/get-template/{template_id}")
+async def get_template(template_id: str):
+    db = get_db()
+    try:
+        template = await db["email_templates"].find_one({"_id": ObjectId(template_id)})
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        template["_id"] = str(template["_id"])
+        return template
+    except Exception as e:
+        print(f"Error fetching template: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -313,14 +303,12 @@ async def generate_pdf(request: Request, pdf_req: PDFRequest):
         browser = request.app.state.browser
         html_content = pdf_req.html_content
         
-        # Load and render template if ID provided
         if pdf_req.template_id:
             db = get_db()
             template = await db["email_templates"].find_one({"_id": ObjectId(pdf_req.template_id)})
             if template:
                 base_html = template.get("base_html", "")
                 variables = template.get("variable", [])
-                # Apply dynamic rendering
                 html_content = render_template_content(
                     base_html, 
                     variables, 
@@ -350,7 +338,6 @@ async def generate_pdf(request: Request, pdf_req: PDFRequest):
 async def bulk_generate(bulk_id: str, request: Request):
     db = get_db()
 
-    # Fetch bulk config
     try:
         bulk_config = await db["bulk_configs"].find_one({"_id": ObjectId(bulk_id)})
     except Exception:
@@ -367,7 +354,6 @@ async def bulk_generate(bulk_id: str, request: Request):
     format_type  = bulk_config.get("format", "html")
     is_zip       = bulk_config.get("zip", False)
 
-    # Fetch template
     try:
         template = await db["email_templates"].find_one({"_id": ObjectId(template_id)})
     except Exception:
@@ -420,7 +406,6 @@ async def bulk_generate(bulk_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-    # Persist results
     try:
         await db["dynamic-collection"].insert_one({
             "template_id": template_id,
@@ -431,7 +416,6 @@ async def bulk_generate(bulk_id: str, request: Request):
     except Exception as e:
         print(f"Failed to persist bulk results: {e}")
 
-    # Return ZIP if requested
     if is_zip:
         import io
         import zipfile
@@ -456,3 +440,20 @@ async def bulk_generate(bulk_id: str, request: Request):
         )
 
     return {"results": results, "format": format_type}
+
+
+@app.post("/api/presigned-url")
+async def get_presigned_url(data: dict = Body(...)):
+    file_name = data.get("filename")
+    file_type = data.get("filetype")
+    
+    if not file_name or not file_type:
+        raise HTTPException(status_code=400, detail="filename and filetype are required")
+    
+    unique_filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file_name}"
+    
+    url_data = generate_presigned_url(unique_filename, file_type)
+    if not url_data:
+        raise HTTPException(status_code=500, detail="Failed to generate presigned URL")
+    
+    return url_data

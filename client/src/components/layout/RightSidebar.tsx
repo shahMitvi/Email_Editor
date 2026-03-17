@@ -115,6 +115,7 @@ export const RightSidebar = () => {
 
   const { selectedId, pages, updateElement, selectElement, removeElement } = useBuilderStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedElement = pages.flatMap(p => p.elements).find((el) => el.id === selectedId);
 
@@ -142,12 +143,71 @@ export const RightSidebar = () => {
     updateElement(selectedElement.id, { content: { ...selectedElement.content, [key]: value } });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedElement) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => handleContentChange('url', ev.target?.result as string);
-    reader.readAsDataURL(file);
+
+    try {
+      // 1. Get presigned URL from backend
+      const response = await fetch('http://localhost:8000/api/presigned-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json'  },
+        body: JSON.stringify({ filename: file.name, filetype: file.type }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to get presigned URL');
+      const { upload_url, public_url } = await response.json();
+
+      // 2. Upload directly to Wasabi
+      const uploadRes = await fetch(upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type , "x-amz-acl": "public-read" },
+        body: file,
+      });
+
+      if (!uploadRes.ok) throw new Error('Failed to upload to S3');
+
+      // 3. Update element content with the final public URL
+      handleContentChange('url', public_url);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Failed to upload image. Please check your connection and credentials.");
+    }
+    
+    e.target.value = '';
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedElement) return;
+    
+    try {
+      // 1. Get presigned URL from backend
+      const response = await fetch('http://localhost:8000/api/presigned-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, filetype: file.type }),
+      });
+      
+      if (!response.ok) throw new Error('Failed to get presigned URL');
+      const { upload_url, public_url } = await response.json();
+
+      // 2. Upload directly to Wasabi
+      const uploadRes = await fetch(upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type , "x-amz-acl": "public-read" },
+        body: file,
+      });
+
+      if (!uploadRes.ok) throw new Error('Failed to upload to S3');
+
+      // 3. Update element content with the final public URL
+      handleContentChange('url', public_url);
+    } catch (err) {
+      console.error("Video upload failed:", err);
+      alert("Failed to upload video. Please check your connection and credentials.");
+    }
+
     e.target.value = '';
   };
 
@@ -350,16 +410,43 @@ export const RightSidebar = () => {
                   </div>
                 )}
 
-                {/* VIDEO */}
                 {selectedElement.type === 'video' && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Video URL</label>
-                      <input type="text" value={selectedElement.content.url||''} onChange={(e) => handleContentChange('url', e.target.value)} placeholder="https://youtube.com/watch?v=…" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500" />
+                      <label className="block text-xs text-gray-600 mb-1">Upload Video</label>
+                      <input ref={videoFileInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+                      <button onClick={() => videoFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border-2 border-dashed border-gray-300 rounded-md hover:border-indigo-400 hover:bg-indigo-50/30 text-sm text-gray-600 hover:text-indigo-600 transition-colors">
+                        <Upload size={16} />Choose Video File
+                      </button>
+                      <p className="text-[9px] text-gray-400 mt-1 italic">Large videos are supported via Cloud Storage.</p>
+                      {selectedElement.content.url?.includes('wasabisys.com') && <p className="text-[10px] text-green-600 mt-1">✓ Video uploaded to Cloud</p>}
                     </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-gray-200" />
+                      <span className="text-[10px] text-gray-400 uppercase tracking-wider">or Link</span>
+                      <div className="flex-1 h-px bg-gray-200" />
+                    </div>
+
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">Thumbnail URL</label>
+                      <label className="block text-xs text-gray-600 mb-1">Video or YouTube URL</label>
+                      <div className="flex items-center gap-1">
+                        <Link size={12} className="text-gray-400 shrink-0" />
+                        <input 
+                          type="text" 
+                          value={selectedElement.content.url?.startsWith('data:') ? '' : (selectedElement.content.url || '')} 
+                          onChange={(e) => handleContentChange('url', e.target.value)} 
+                          placeholder="https://youtube.com/... or .mp4 link" 
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500" 
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">Supports YouTube, Vimeo, and direct MP4/WebM links.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Fallback Thumbnail URL</label>
                       <input type="text" value={selectedElement.content.thumbnailUrl||''} onChange={(e) => handleContentChange('thumbnailUrl', e.target.value)} placeholder="https://example.com/thumb.jpg" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-1 focus:ring-indigo-500" />
+                      <p className="text-[10px] text-gray-400 mt-1">Displayed when no video is loaded.</p>
                     </div>
                   </div>
                 )}

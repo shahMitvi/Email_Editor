@@ -30,7 +30,18 @@ const DEFAULT_TABLE_HTML = `<table>
 </table>`;
 
 export const Layout = () => {
-  const { pages, addElementToPage, reorderPageElements } = useBuilderStore();
+  const { pages, addElementToPage, reorderPageElements, _hasHydrated } = useBuilderStore();
+
+  if (!_hasHydrated) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-medium text-gray-500">Loading your template...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;

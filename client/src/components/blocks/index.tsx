@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import type { EmailElement } from '../../store/useBuilderStore';
 import { useBuilderStore } from '../../store/useBuilderStore';
 import { QRCodeSVG } from 'qrcode.react';
@@ -25,6 +25,13 @@ export const applyVariables = (text: string, variables: any[]) => {
     }
   });
   return result;
+};
+
+// YouTube ID extractor
+export const getYouTubeID = (url: string) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,17 +200,48 @@ export const SpacerBlock = ({ element }: { element: EmailElement }) => {
 export const VideoBlock = ({ element }: { element: EmailElement }) => {
   const { variables } = useBuilderStore();
   const contentStyles = getContentStyles(element.styles);
-  const rawUrl = element.content.thumbnailUrl || 'https://via.placeholder.com/600x337/1a1a2e/ffffff?text=Video';
+  const rawUrl = element.content.url || '';
   const url = applyVariables(rawUrl, variables);
+  const ytId = getYouTubeID(url);
 
-  return (
-    <div style={{ ...contentStyles, position: 'relative', overflow: 'hidden', backgroundColor: '#000', pointerEvents: 'none', userSelect: 'none' }}>
-      <img src={url} alt="Video thumbnail" draggable={false} style={{ display: 'block', width: '100%', height: 'auto' }} />
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
-        <div style={{ width: 52, height: 52, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(255,255,255,0.55)' }}>
-          <div style={{ width: 0, height: 0, borderTop: '9px solid transparent', borderBottom: '9px solid transparent', borderLeft: '16px solid white', marginLeft: 3 }} />
+  // If there's no URL, show placeholder
+  if (!url) {
+    const rawThumb = element.content.thumbnailUrl || 'https://via.placeholder.com/600x337/1a1a2e/ffffff?text=Video';
+    const thumbUrl = applyVariables(rawThumb, variables);
+    return (
+      <div style={{ ...contentStyles, position: 'relative', overflow: 'hidden', backgroundColor: '#000', pointerEvents: 'none', userSelect: 'none' }}>
+        <img src={thumbUrl} alt="Video thumbnail" draggable={false} style={{ display: 'block', width: '100%', height: 'auto' }} />
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid rgba(255,255,255,0.55)' }}>
+            <div style={{ width: 0, height: 0, borderTop: '9px solid transparent', borderBottom: '9px solid transparent', borderLeft: '16px solid white', marginLeft: 3 }} />
+          </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div style={{ ...contentStyles, position: 'relative', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '16/9' }}>
+      {ytId ? (
+        <iframe
+          width="100%"
+          height="100%"
+          src={`https://www.youtube.com/embed/${ytId}`}
+          title="YouTube video player"
+          frameBorder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        />
+      ) : (
+        <video
+          src={url}
+          controls
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        >
+          Your browser does not support the video tag.
+        </video>
+      )}
     </div>
   );
 };

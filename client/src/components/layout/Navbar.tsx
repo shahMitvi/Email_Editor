@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Send, LayoutGrid, Layers, Undo, Redo, Eye, Save, Check, X, Menu, FileText, Database } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Send, LayoutGrid, Layers, Undo, Redo, Eye, Save, Check, X, Menu, FileText, Database, ChevronDown, Plus } from 'lucide-react';
 import { useBuilderStore, useTemporalStore } from '../../store/useBuilderStore';
 import { downloadHtmlFile } from '../../utils/exportHtml';
 import { PreviewModal } from '../builder/PreviewModal';
@@ -7,14 +7,66 @@ import { mapStateToDBPayload } from '../../utils/mapper';
 import { buildEmailHtml } from '../../utils/exportHtml';
 
 export const Navbar = () => {
-  const { activeTab, setActiveTab, pages, setShowMobileMenu } = useBuilderStore();
+  const { 
+    activeTab, setActiveTab, pages, setShowMobileMenu, 
+    templateId, setTemplateId, 
+    filename, setFilename,
+    _hasHydrated, resetBuilder
+  } = useBuilderStore();
   const totalElements = pages.reduce((sum, p) => sum + p.elements.length, 0);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [filename, setFilename] = useState('email');
   const [savedFeedback, setSavedFeedback] = useState(false);
-  const [isGeneratePdf, setIsGeneratedPdf] = useState(false);
-  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
+  // Sync templateId with URL
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (templateId) {
+      url.searchParams.set('id', templateId);
+    } else {
+      url.searchParams.delete('id');
+    }
+    window.history.replaceState({}, '', url);
+  }, [templateId]);
+
+  // Load template if ID in URL
+  useEffect(() => {
+    const fetchTemplate = async (id: string) => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/get-template/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Map data to store state
+          // Note: Since we use persisted store, we must be careful not to overwrite
+          // But if ID is in URL, we want to load that specific one.
+          const store = useBuilderStore.getState();
+          store.setTemplateId(id);
+          store.setFilename(data.name || 'email');
+          
+          if (data.contentJSON && data.contentJSON.pages) {
+             useBuilderStore.setState({ 
+               pages: data.contentJSON.pages,
+               variables: data.variable || [],
+               canvasSettings: data.globalSettings || store.canvasSettings
+             });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load template from URL:", err);
+      }
+    };
+
+    if (_hasHydrated) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlId = urlParams.get('id');
+      if (urlId && urlId !== templateId) {
+        fetchTemplate(urlId);
+      }
+    }
+  }, [_hasHydrated]); // Only run after store has hydrated
+
   // Undo/Redo state from zundo directly via getState()
   const temporalState = useTemporalStore?.getState?.() || { pastStates: [], futureStates: [], undo: () => {}, redo: () => {} };
   const { undo, redo, pastStates, futureStates } = temporalState;
@@ -44,9 +96,7 @@ export const Navbar = () => {
         
         if (!silent) {
           setSavedFeedback(true);
-          // Trigger local download
-          downloadHtmlFile(pages, variables, name, name, canvasSettings);
-          setTimeout(() => setSavedFeedback(false), 2000);
+          setTimeout(() => setSavedFeedback(false), 3000);
           setShowSaveModal(false);
         }
         return newId;
@@ -60,13 +110,18 @@ export const Navbar = () => {
     }
   };
 
+  const handleNewFile = () => {
+    if (confirm("Are you sure you want to start a new file? Unsaved changes will be lost.")) {
+      resetBuilder();
+    }
+  };
+
 
   const handleExportPDF = async () => {
-    setIsGeneratedPdf(true);
+    setIsExporting(true);
     try {
       let currentId = templateId;
       if (!currentId) {
-        // Force save first
         currentId = await handleSave(true);
       }
 
@@ -91,12 +146,20 @@ export const Navbar = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      setShowExportMenu(false);
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Error exporting PDF");
     } finally {
-      setIsGeneratedPdf(false);
+      setIsExporting(false);
     }
+  };
+
+  const handleExportHTML = () => {
+    const { pages, variables, canvasSettings } = useBuilderStore.getState();
+    const name = filename.trim() || 'email';
+    downloadHtmlFile(pages, variables, name, name, canvasSettings);
+    setShowExportMenu(false);
   };
 
   return (
@@ -105,7 +168,7 @@ export const Navbar = () => {
       {showPreview && (
         <PreviewModal pages={pages} onClose={() => setShowPreview(false)} />
       )}
-      <div className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-2 sm:px-4 z-10 shrink-0 shadow-sm relative">
+      <div className="h-14 border-b border-gray-200 bg-white flex items-center justify-between px-2 sm:px-4 z-[100] shrink-0 shadow-sm relative">
         {/* Left: Mobile Toggle & Logo */}
         <div className="flex items-center gap-2 w-1/4 min-w-max">
           <button
@@ -147,6 +210,14 @@ export const Navbar = () => {
 
         {/* Right Actions */}
         <div className="flex items-center justify-end gap-1 md:gap-2 w-1/4 shrink-0 min-w-max">
+          <button
+            onClick={handleNewFile}
+            className="flex items-center justify-center p-2 md:px-3 md:py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            title="New File"
+          >
+            <Plus size={16} />
+            <span className="hidden md:inline ml-2">New</span>
+          </button>
           <button 
             onClick={() => undo()}
             disabled={pastStates.length === 0}
@@ -172,29 +243,64 @@ export const Navbar = () => {
             <Eye size={16} />
             <span className="hidden md:inline ml-2">Preview</span>
           </button>
-          {/*Export PDF Button */}
-
-          <button 
-            onClick={handleExportPDF}
-            disabled={totalElements === 0 || isGeneratePdf}
-            className='flex items-center justify-center p-2 md:px-3 md:py-1.5 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
-            title='Export  as PDF'>
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={totalElements === 0 || isExporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-40"
+              title="Export options"
+            >
               <FileText size={16} />
-              <span className='hidden md:inline ml-2'>{isGeneratePdf ? 'Generating...': 'Export PDF'}</span>
+              <span className="hidden md:inline">Export</span>
+              <ChevronDown size={14} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
             </button>
+
+            {showExportMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowExportMenu(false)} 
+                />
+                <div className="absolute right-0 mt-2 w-60 bg-white border border-gray-200 rounded-lg shadow-xl z-[110] overflow-visible animate-in fade-in slide-in-from-top-2">
+                  <button
+                    onClick={handleExportHTML}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 whitespace-nowrap"
+                  >
+                    <div className="w-8 h-8 rounded-md bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                      <Send size={14} />
+                    </div>
+                    <span>Download HTML</span>
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                  >
+                    <div className="w-8 h-8 rounded-md bg-red-50 flex items-center justify-center text-red-600 shrink-0">
+                      <FileText size={14} />
+                    </div>
+                    <span>{isExporting ? 'Exporting PDF...' : 'Download PDF'}</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Save button */}
           <button
-            onClick={() => setShowSaveModal(true)}
+            onClick={templateId ? () => handleSave() : () => setShowSaveModal(true)}
             disabled={totalElements === 0}
             className={`flex items-center justify-center p-2 md:px-3 md:py-1.5 text-sm font-medium rounded-md transition-all ${
               savedFeedback
                 ? 'bg-green-600 text-white'
                 : 'bg-indigo-600 text-white hover:bg-indigo-700'
             } disabled:opacity-40 disabled:cursor-not-allowed`}
-            title="Save HTML"
+            title={templateId ? "Update Template" : "Save Template"}
           >
             {savedFeedback ? <Check size={16} /> : <Save size={16} />}
-            <span className="hidden md:inline ml-2">{savedFeedback ? 'Saved!' : 'Save'}</span>
+            <span className="hidden md:inline ml-2">
+              {savedFeedback ? 'Saved!' : (templateId ? 'Update' : 'Save')}
+            </span>
           </button>
         </div>
       </div>

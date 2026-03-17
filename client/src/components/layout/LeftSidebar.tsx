@@ -131,7 +131,7 @@ const VariableCard = ({ variable, index, updateVariable, removeVariable }: any) 
           ) : (
             <div>
               <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                Fallback Data <span className="normal-case font-normal text-gray-400">(array of objects)</span>
+                Fallback Data <span className="normal-case font-normal text-gray-400">(key: value)</span>
               </label>
               <textarea
                 key={variable.id + '_json'}

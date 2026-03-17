@@ -19,6 +19,13 @@ function applyVariables(text: string, variables: TemplateVariable[] = [], keepVa
   return result;
 }
 
+// YouTube ID extractor
+function getYouTubeID(url: string) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 // Formula evaluator: {key} replaced with row value, then expression evaluated
 function evalFormula(formula: string, row: Record<string, string>): string {
   try {
@@ -95,19 +102,45 @@ function serializeSpacer(el: EmailElement): string {
 }
 
 function serializeVideo(el: EmailElement, vars: TemplateVariable[], keepVars: boolean): string {
-  const rawThumb = el.content.thumbnailUrl || 'https://via.placeholder.com/600x337/1a1a2e/ffffff?text=Video';
-  const rawUrl = el.content.url || '#';
-  const thumb = applyVariables(rawThumb, vars, keepVars);
+  const rawUrl = el.content.url || '';
   const url = applyVariables(rawUrl, vars, keepVars);
   const w = el.styles.width || '100%';
+  const ytId = getYouTubeID(url);
+
+  // If there's no URL, show placeholder
+  if (!url) {
+    const rawThumb = el.content.thumbnailUrl || 'https://via.placeholder.com/600x337/1a1a2e/ffffff?text=Video';
+    const thumb = applyVariables(rawThumb, vars, keepVars);
+    return `
+<div style="position:relative;max-width:${w};text-align:center;background:#000;line-height:0;">
+  <img src="${thumb}" alt="Video" style="display:block;width:100%;height:auto;border:0" />
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,0.4);border:2px solid rgba(255,255,255,0.6)">
+    <div style="width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:16px solid white;margin:14px auto 0 17px"></div>
+  </div>
+</div>`.trim();
+  }
+
+  // YouTube source
+  if (ytId) {
+    return `
+<div style="max-width:${w};background:#000;aspect-ratio:16/9;overflow:hidden">
+  <iframe
+    width="100%"
+    height="100%"
+    src="https://www.youtube.com/embed/${ytId}"
+    title="Video player"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowfullscreen
+    style="width:100%;height:100%;min-height:315px;border:0"
+  ></iframe>
+</div>`.trim();
+  }
+
+  // Native video source
   return `
-<div style="position:relative;max-width:${w};text-align:center">
-  <a href="${url}" style="display:block">
-    <img src="${thumb}" alt="Video" style="display:block;width:100%;height:auto;border:0" />
-    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,0.4);border:2px solid rgba(255,255,255,0.6)">
-      <div style="width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:16px solid white;margin:14px auto 0 17px"></div>
-    </div>
-  </a>
+<div style="max-width:${w};background:#000;aspect-ratio:16/9;overflow:hidden">
+  <video src="${url}" controls style="width:100%;height:100%;max-width:100%;display:block;outline:none"></video>
 </div>`.trim();
 }
 
@@ -138,7 +171,7 @@ function emailifyTiptapTable(html: string, el: EmailElement): string {
   rows.forEach((row, rowIndex) => {
     // Determine even/odd for striping (skip header)
     const isHeader = row.closest('thead') !== null || row.querySelector('th') !== null;
-    const rowBg = isHeader ? headerBg : (striped && rowIndex % 2 === 1 ? stripeColor : '#ffffff');
+    const isStripe = !isHeader && (striped && rowIndex % 2 === 1);
 
     row.querySelectorAll('td, th').forEach((cell) => {
       const tag = cell.tagName.toLowerCase();
@@ -146,7 +179,7 @@ function emailifyTiptapTable(html: string, el: EmailElement): string {
 
       // Preserve any existing inline background set by CellBgBtn
       const existingBg = (cell as HTMLElement).style.backgroundColor;
-      const bgToUse = existingBg || (isHeaderCell ? headerBg : (striped && rowIndex % 2 === 1 ? stripeColor : ''));
+      const bgToUse = existingBg || (isHeaderCell ? headerBg : (isStripe ? stripeColor : ''));
 
       const existingStyle = (cell as HTMLElement).style.cssText || '';
       const baseStyle = `border:1px solid ${borderColor};padding:${cellPadding};vertical-align:top;box-sizing:border-box;font-family:Arial,sans-serif;font-size:14px;word-break:break-word;`;
@@ -209,13 +242,13 @@ function serializeDynamicTable(el: EmailElement, vars: TemplateVariable[]): stri
     html += `<tr><td colspan="${columnMappings.length}" style="${tdStyle}text-align:center;color:#9ca3af;font-style:italic;">No data</td></tr>`;
   } else {
     dataRows.forEach((row, ri) => {
-      const rowBg = ri % 2 === 1 ? 'background:#fafafa;' : '';
+      const rowBgStyle = ri % 2 === 1 ? 'background:#fafafa;' : '';
       html += `<tr>`;
       for (const col of columnMappings) {
         const val = col.type === 'formula'
           ? evalFormula(col.formula || '', row)
           : (row[col.dataKey] ?? '');
-        html += `<td style="${tdStyle}${rowBg}">${val}</td>`;
+        html += `<td style="${tdStyle}${rowBgStyle}">${val}</td>`;
       }
       html += '</tr>';
     });
@@ -327,7 +360,7 @@ function serializeTable(el: EmailElement, vars: TemplateVariable[] = []): string
   columnWidths.forEach((w) => { html += `<col style="width:${w}%">`; });
   html += '</colgroup><tbody>';
 
-  cellData.forEach((row: any[], ri: number) => {
+  cellData.forEach((row: any[]) => {
     html += '<tr>';
     row.forEach((cell: any) => {
       const Tag = cell.isHeader ? 'th' : 'td';
